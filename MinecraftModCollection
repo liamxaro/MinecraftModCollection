@@ -1,0 +1,363 @@
+import requests
+import tldextract
+import re
+import webbrowser
+import os
+from bs4 import BeautifulSoup
+import selenium
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium import *
+import pandas as pd
+import datetime
+import time
+import tqdm
+import xlsxwriter
+
+def main():
+
+    startTime = time.time()
+    currentDirectory = os.path.dirname(os.path.abspath(__file__))
+
+    #gather input on whether to scrape data or continue with data already there. If its your first time you need to scrape
+    while True:
+        ans = str(input("Would you like to scrape more data to aggregate (Y/N): ").lower())
+
+        if ans in ['yes', 'y', 'yeah', 'yup', 'no', 'n', 'nah', 'nope']:
+            break
+        else:
+            print("Invalid response. Please enter (Y or Yes) or (N or No).")
+
+    if ans in ['yes', 'y', 'yeah', 'yup']:
+
+        driver = webdriver.Firefox()
+        for i in range(1, 201):
+            url = f"https://www.curseforge.com/minecraft/search?page={i}&pageSize=50&sortType=1&class=mc-mods"
+
+            soup = get_website_data(url, driver)
+
+            newlyCreatedFile = create_cached_data(soup, url, currentDirectory)
+
+            write_cached_data(soup, newlyCreatedFile)
+
+        driver.quit()
+
+    
+    #combine all 200 webpages into one one page
+    create_aggregated_file()
+
+    #access the one webpage and put the desired data into a df
+    combinedDF = convert_html_to_df(currentDirectory)
+
+    #adjust the values(dates ,general cleaning, etc)
+    combinedDF = clean_df(combinedDF)
+
+    #output to an excel file
+    write_to_excel(combinedDF, currentDirectory)
+
+
+
+    #Finalize time logic to display total execution time
+    endTime = time.time()
+    elapsedTime = endTime - startTime
+    hours, remainder = divmod(elapsedTime, 3600)
+    minutes, seconds = divmod(remainder, 60)
+
+    print(f"Process Completed In: {int(hours)} hours, {int(minutes)} minutes, {int(seconds)} seconds")
+
+
+
+    
+
+
+def create_cached_data(websiteData: BeautifulSoup, url: str, currentDirectory: str):
+    """
+    """
+    todaysDate = datetime.datetime.now() 
+
+    #set up cached data folder system 
+    
+    folderName = 'CachedData'
+    parentFolderPath = os.path.join(currentDirectory, folderName)
+
+    #Establish name of folder based off website we are scraping
+    tld = extract_tld(url)
+    websiteFolderName = url.replace('/', '|')
+    websiteFolderName = websiteFolderName[0:(url.index(tld) + len(tld))] #this trick grabs the index of the tld in the url
+    websiteFolderPath = os.path.join(parentFolderPath, websiteFolderName)
+    websiteFolderPath = websiteFolderPath + '--' + str(todaysDate.day) + '-' + str(todaysDate.month) + '-' + str(todaysDate.year)
+
+    #Establish naming system for each file that will be placed inside websiteFolderPath
+    fileName = url.replace('/', '|') + '-DATA' + str(todaysDate.day) + '-' + str(todaysDate.month) + '-' + str(todaysDate.year) + '.html'
+    filePath = os.path.join(websiteFolderPath, fileName)
+
+    if not os.path.exists(parentFolderPath):
+        try:
+            os.makedirs(parentFolderPath)
+        except:
+            raise "'CachedData'folder creation issue!"
+        
+        if not os.path.exists(websiteFolderPath):
+            try:
+                os.makedirs(websiteFolderPath)
+                print("made it website name first")
+            except:
+                raise "Website folder creation issue!"
+            
+                
+            if not os.path.exists(filePath):
+
+                try:
+                    with open(filePath, 'w') as file:
+                        file.write('')
+                    file.close()
+                except:
+                    raise "filePath creation issue"
+    
+    elif not os.path.exists(websiteFolderPath):
+
+        try:
+            os.makedirs(websiteFolderPath)
+            print("made it second website thing")
+        except:
+            raise "Website folder creation issue"
+        
+    
+        if not os.path.exists(filePath):
+            
+            try:
+                with open(filePath, 'w') as file:
+                    file.write('')
+                file.close()
+            except:
+                raise "filePath creation issue"
+                
+            
+    elif not os.path.exists(filePath):
+
+        try:
+            with open(filePath, 'w') as file:
+                file.write('')
+            file.close()
+        except:
+            raise "filePath creation issue!"
+    
+    return filePath
+
+def write_cached_data(websiteData: BeautifulSoup, newlyCreatedFile: str):
+
+    if websiteData is None:
+        print("No data was captured. Thus the file will be empty")
+    else:
+        with open(newlyCreatedFile, 'w', encoding='utf-8') as file:
+            file.write(websiteData.prettify())
+        file.close()
+
+def get_website_data(url: str, driver: webdriver):
+    try:
+        driver.get(url)
+        wait = WebDriverWait(driver, 10)
+        waitForIt = wait.until(EC.presence_of_element_located((By.CLASS_NAME, "results-container")))
+
+        # Get the HTML content of the 'results-container' element
+        webpage = waitForIt.get_attribute('outerHTML')
+
+        # Parse the HTML using BeautifulSoup
+        soup = BeautifulSoup(webpage, features="html.parser")
+
+        return soup
+    except Exception as e:
+        print(f"An exception occurred: {e}")
+
+def create_aggregated_file():
+    """
+    """
+    directory = "/Users/laro/LiamsThingsOnComputerDrive/VisualStudiosProjects/python-workspace/MinecraftWebScraping/CachedData/"
+    items = os.listdir(directory)
+    folders = [os.path.join(directory, item) for item in items if os.path.isdir(os.path.join(directory, item))]
+    S = ''
+
+    iterationCount = 0
+    for i in range(len(folders)):
+        folder = os.listdir(folders[i])
+        iterationCount = iterationCount + len(folder)
+
+    progressBar = tqdm.tqdm(folders, total=iterationCount, colour='#7B64C2')
+
+    for folder in folders:
+
+        #get every file in the folder
+        L = sorted(os.listdir(folder), reverse=False)
+        L = [os.path.join(directory, folder, file) for file in L]
+
+        
+
+        # Update the description with the current item
+        progressBar.set_description(f"Buidling Master File: {folder[folder.rfind('/') + 1:]}")
+        
+        #loop through every file in a folder 
+        for i in range(len(L)):
+
+            #get the file path of the last file in the folder
+            master = ''
+            if i == len(L) - 1:
+                master = L[i]
+                master = master.replace('DATA', 'MASTER')
+
+            #read the file and compile all the files in a folder into one big string
+            try:
+                if L[i] == master:
+                    pass
+                else:
+                    with open(L[i], 'r') as file:
+                        content = file.read()
+                        S = S + '\n' + content
+                        progressBar.update(1)
+                    file.close()
+            except Exception as e:
+                raise e
+
+        
+        #write a master copy which contains the contents of every file in one file for each folder
+        soup = BeautifulSoup(S, 'html.parser')
+        with open(master, 'w') as file:
+            file.write(soup.prettify())
+        file.close()
+
+        
+    
+    progressBar.close()
+
+def convert_html_to_df(currentDirectory: str):
+    """
+    """
+    directory = os.path.join(currentDirectory, 'CachedData')
+    items = os.listdir(directory)
+    folders = [os.path.join(directory, item) for item in items if os.path.isdir(os.path.join(directory, item))]
+    master ='MASTER'
+    S = ''
+    finalDF = pd.DataFrame()
+
+
+    for i in range(len(folders)):
+
+        #get every file in the folder
+        L = sorted(os.listdir(folders[i]), reverse=False)
+        L = set([os.path.join(directory, folders[i], file) for file in L])
+        masterFile = [s for s in L if master in s]
+        
+
+        with open(masterFile[0], 'r') as file:
+            S = file.read()
+        file.close()
+
+        soup = BeautifulSoup(S, 'html.parser')
+
+
+        cards = soup.find_all('div', class_='project-card')
+
+        def generate_data(cards: list, folder:str) -> pd.DataFrame:
+            progressBar = tqdm.tqdm(cards, desc=f"Building Pandas DataFrame: {folder[folder.rfind('/') + 1:]}", colour='#7B64C2')
+
+            for i in range(len(cards)):
+                
+                
+                a = cards[i].find('a', class_='name')
+                b = cards[i].find('a', class_='author-name')
+                c = cards[i].find('p', class_='description')
+                d = cards[i].find('li', class_='detail-flavor')
+                e = cards[i].find('li', class_='detail-game-version')
+                f = cards[i].find('li', class_='detail-size')
+                g = cards[i].find('li', class_='detail-created')
+                h = cards[i].find('li', class_='detail-updated')
+                j = cards[i].find('li', class_='detail-downloads')
+                k = cards[i].find('ul', class_='categories')
+                if k != None:
+                    kCategories = k.find_all('li')
+                    kCategories = [li.text.strip() for li in kCategories]
+
+
+                yield {
+                    'title': '' if a == None else a.get('title')[a.get('title').find('Go to') + 6:a.get('title').find('Project Page')],
+                    'author': '' if b == None else b.get('href')[b.get('href').rfind('/') + 1:],
+                    'description': '' if c == None else c.text,
+                    'mod_loader' : '' if d == None else d.text,
+                    'version' : '' if e == None else e.text,
+                    'file_size': '' if f == None else f.text,
+                    'date_created' : '' if g == None else g.text,
+                    'date_last_updated' : '' if h == None else h.text,
+                    'download_count': '' if j == None else j.text,
+                    'mod_category': '' if k == None else ' | '.join(kCategories),
+                    'link_extension': '' if a == None else a.get('href'),
+                    'date_scraped': folder[folder.rfind('--') + 2:]
+                    }
+                progressBar.update(1)
+
+        df = pd.DataFrame.from_records(generate_data(cards, folders[i]))
+        df.drop_duplicates(inplace=True, keep='first')
+        print(df)
+
+        finalDF = pd.concat([finalDF, df], ignore_index=True)
+
+    return finalDF
+      
+def extract_tld(url:str) -> str:
+    # Use tldextract to extract the domain components
+    extracted_info = tldextract.extract(url)
+
+    # Construct and return the top-level domain with the leading dot
+    tld = f".{extracted_info.suffix}"
+    return tld
+        
+def clean_df(combinedDF: pd.DataFrame) -> pd.DataFrame:
+
+    combinedDFColumns = combinedDF.columns
+
+    #strip white space
+    for i in range(len(combinedDFColumns)):
+        combinedDF[combinedDFColumns[i]] = combinedDF[combinedDFColumns[i]].str.strip()
+
+    #adjust mod_loader column
+    combinedDF['mod_loader'] = combinedDF['mod_loader'].str.split().apply(lambda x: '|'.join([item.strip().replace(r'\+.', '') for item in x if len(item.strip()) > 1]))
+
+
+    #adjust dates
+    combinedDF['date_created'] = pd.to_datetime(combinedDF['date_created'], format='%b %d, %Y').dt.strftime('%d-%m-%Y')
+    combinedDF['date_last_updated'] = pd.to_datetime(combinedDF['date_last_updated'], format='%b %d, %Y').dt.strftime('%d-%m-%Y')
+    combinedDF['date_scraped'] = pd.to_datetime(combinedDF['date_scraped'], format='%d-%m-%Y').dt.strftime('%d-%m-%Y')
+
+    # Sort the DataFrame by 'date_scraped' in ascending order
+    combinedDF.sort_values('date_scraped', inplace=True)
+
+    # Keep the oldest date for each duplicated row
+    combinedDF = combinedDF.drop_duplicates(subset=combinedDF.columns.difference(['date_scraped']), keep='last')
+    combinedDF = combinedDF.drop_duplicates()
+
+    combinedDF.reset_index(drop=True, inplace=True)
+
+
+    return combinedDF
+
+def write_to_excel(combinedDF: pd.DataFrame, currentDirectory: str):
+    """
+    """
+
+    fileName = 'output.xlsx'
+    directoryName = 'Output'
+
+    directoryPath = os.path.join(currentDirectory, directoryName)
+
+    try:
+        if not os.path.exists(directoryPath):
+            os.makedirs(directoryPath)
+
+        filePath = os.path.join(directoryPath, fileName)
+        with pd.ExcelWriter(filePath, engine='xlsxwriter', mode='w') as writer:
+            combinedDF.to_excel(writer, index=False)
+
+    except Exception as e:
+        raise "Could not output the results. Check Function 'write_to_excel()'"
+
+main()
