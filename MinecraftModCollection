@@ -32,7 +32,7 @@ def main():
 
     if ans in ['yes', 'y', 'yeah', 'yup']:
 
-        driver = webdriver.Firefox()
+        driver = webdriver.Safari()
         for i in range(1, 201):
             url = f"https://www.curseforge.com/minecraft/search?page={i}&pageSize=50&sortType=1&class=mc-mods"
 
@@ -174,9 +174,16 @@ def get_website_data(url: str, driver: webdriver):
 def create_aggregated_file():
     """
     """
-    directory = "/Users/laro/LiamsThingsOnComputerDrive/VisualStudiosProjects/python-workspace/MinecraftWebScraping/CachedData/"
+    #get current directory with cachedData
+    directory = os.path.join(os.getcwd(), 'CachedData')
+
+    #get everything in the cachedData directory
     items = os.listdir(directory)
+
+    #get all folders inside the cachedData
     folders = [os.path.join(directory, item) for item in items if os.path.isdir(os.path.join(directory, item))]
+
+    #Initialize string that will hold all compiled html files as string
     S = ''
 
     iterationCount = 0
@@ -236,72 +243,61 @@ def convert_html_to_df(currentDirectory: str):
     directory = os.path.join(currentDirectory, 'CachedData')
     items = os.listdir(directory)
     folders = [os.path.join(directory, item) for item in items if os.path.isdir(os.path.join(directory, item))]
-    master ='MASTER'
-    S = ''
+    master = 'MASTER'
     finalDF = pd.DataFrame()
 
+    for folder in folders:
+        # Get every file in the folder
+        files = sorted(os.listdir(folder), reverse=False)
+        files = [os.path.join(folder, file) for file in files]
+        masterFile = [s for s in files if master in s]
 
-    for i in range(len(folders)):
-
-        #get every file in the folder
-        L = sorted(os.listdir(folders[i]), reverse=False)
-        L = set([os.path.join(directory, folders[i], file) for file in L])
-        masterFile = [s for s in L if master in s]
-        
+        if not masterFile:
+            continue
 
         with open(masterFile[0], 'r') as file:
-            S = file.read()
-        file.close()
+            content = file.read()
 
-        soup = BeautifulSoup(S, 'html.parser')
-
-
+        soup = BeautifulSoup(content, 'html.parser')
         cards = soup.find_all('div', class_='project-card')
 
-        def generate_data(cards: list, folder:str) -> pd.DataFrame:
-            progressBar = tqdm.tqdm(cards, desc=f"Building Pandas DataFrame: {folder[folder.rfind('/') + 1:]}", colour='#7B64C2')
+        data_list = []
+        progress_bar = tqdm.tqdm(cards, desc=f"Building DataFrame: {os.path.basename(folder)}", colour='#7B64C2')
 
-            for i in range(len(cards)):
-                
-                
-                a = cards[i].find('a', class_='name')
-                b = cards[i].find('a', class_='author-name')
-                c = cards[i].find('p', class_='description')
-                d = cards[i].find('li', class_='detail-flavor')
-                e = cards[i].find('li', class_='detail-game-version')
-                f = cards[i].find('li', class_='detail-size')
-                g = cards[i].find('li', class_='detail-created')
-                h = cards[i].find('li', class_='detail-updated')
-                j = cards[i].find('li', class_='detail-downloads')
-                k = cards[i].find('ul', class_='categories')
-                if k != None:
-                    kCategories = k.find_all('li')
-                    kCategories = [li.text.strip() for li in kCategories]
+        for card in progress_bar:
+            a = card.find('a', class_='name')
+            b = card.find('a', class_='author-name')
+            c = card.find('p', class_='description')
+            d = card.find('li', class_='detail-flavor')
+            e = card.find('li', class_='detail-game-version')
+            f = card.find('li', class_='detail-size')
+            g = card.find('li', class_='detail-created')
+            h = card.find('li', class_='detail-updated')
+            j = card.find('li', class_='detail-downloads')
+            k = card.find('ul', class_='categories')
+            kCategories = [li.text.strip() for li in k.find_all('li')] if k else []
 
+            data_list.append({
+                'title': '' if a is None else a.get('title')[a.get('title').find('Go to') + 6:a.get('title').find('Project Page')],
+                'author': '' if b is None else b.get('href')[b.get('href').rfind('/') + 1:],
+                'description': '' if c is None else c.text,
+                'mod_loader': '' if d is None else d.text,
+                'version': '' if e is None else e.text,
+                'file_size': '' if f is None else f.text,
+                'date_created': '' if g is None else g.text,
+                'date_last_updated': '' if h is None else h.text,
+                'download_count': '' if j is None else j.text,
+                'mod_category': '' if not kCategories else ' | '.join(kCategories),
+                'link_extension': '' if a is None else a.get('href'),
+                'date_scraped': folder[folder.rfind('--') + 2:]
+            })
 
-                yield {
-                    'title': '' if a == None else a.get('title')[a.get('title').find('Go to') + 6:a.get('title').find('Project Page')],
-                    'author': '' if b == None else b.get('href')[b.get('href').rfind('/') + 1:],
-                    'description': '' if c == None else c.text,
-                    'mod_loader' : '' if d == None else d.text,
-                    'version' : '' if e == None else e.text,
-                    'file_size': '' if f == None else f.text,
-                    'date_created' : '' if g == None else g.text,
-                    'date_last_updated' : '' if h == None else h.text,
-                    'download_count': '' if j == None else j.text,
-                    'mod_category': '' if k == None else ' | '.join(kCategories),
-                    'link_extension': '' if a == None else a.get('href'),
-                    'date_scraped': folder[folder.rfind('--') + 2:]
-                    }
-                progressBar.update(1)
-
-        df = pd.DataFrame.from_records(generate_data(cards, folders[i]))
+        df = pd.DataFrame(data_list)
         df.drop_duplicates(inplace=True, keep='first')
-        print(df)
-
         finalDF = pd.concat([finalDF, df], ignore_index=True)
 
     return finalDF
+    
       
 def extract_tld(url:str) -> str:
     # Use tldextract to extract the domain components
