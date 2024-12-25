@@ -19,7 +19,15 @@ import xlsxwriter
 def main():
 
     startTime = time.time()
-    currentDirectory = os.path.dirname(os.path.abspath(__file__))
+    currentDirectory = os.getcwd()
+    drivers = {
+        'google chrome': webdriver.Chrome,
+        'apple safari' : webdriver.Safari,
+        'microsoft edge' : webdriver.Edge,
+        'mozilla firefox' : webdriver.Firefox
+    }
+
+    
 
     #gather input on whether to scrape data or continue with data already there. If its your first time you need to scrape
     while True:
@@ -27,28 +35,59 @@ def main():
 
         if ans in ['yes', 'y', 'yeah', 'yup', 'no', 'n', 'nah', 'nope']:
             break
+
         else:
             print("Invalid response. Please enter (Y or Yes) or (N or No).")
 
+    #Determine which browser you would like python to use
     if ans in ['yes', 'y', 'yeah', 'yup']:
+        while True:
+            driverAns = str(input(f"Type the browser you would like to use as it appears here\n{list(drivers.keys())}: ").lower())
 
-        driver = webdriver.Safari()
-        for i in range(1, 201):
+            if driverAns in list(drivers.keys()):
+                break
+
+            else:
+                print(f"Invalid response. Please enter a value consistent with [{list(drivers.keys())}")
+
+
+
+        
+        #get the website's max amount of pages before iterating through each one
+        try:
+            driver = drivers[driverAns]()
+        except:
+
+            print('That browser is not properly configured on your system.  Properly configure it or restart the program to try another browser.')
+
+
+       
+        url = "https://www.curseforge.com/minecraft/search?page=1&pageSize=50&sortType=1&class=mc-mods"
+        maxWebpages = get_max_webpages(url, driver)
+
+        
+
+        
+        #iterate through all the webpages
+        for i in range(1, maxWebpages + 1):
             url = f"https://www.curseforge.com/minecraft/search?page={i}&pageSize=50&sortType=1&class=mc-mods"
 
+            #retrieve the data from the webpage
             soup = get_website_data(url, driver)
-
+            
+            #
             newlyCreatedFile = create_cached_data(soup, url, currentDirectory)
 
+            #each webpage gets recorded as its own html file in directory 'CachedData'
             write_cached_data(soup, newlyCreatedFile)
 
         driver.quit()
 
     
-    #combine all 200 webpages into one one page
+    #combine all webpages into one one MASTER page
     create_aggregated_file()
 
-    #access the one webpage and put the desired data into a df
+    #access the one MASTER webpage and put the desired data into a pandas DataFrame
     combinedDF = convert_html_to_df(currentDirectory)
 
     #adjust the values(dates ,general cleaning, etc)
@@ -297,7 +336,6 @@ def convert_html_to_df(currentDirectory: str):
         finalDF = pd.concat([finalDF, df], ignore_index=True)
 
     return finalDF
-    
       
 def extract_tld(url:str) -> str:
     # Use tldextract to extract the domain components
@@ -338,6 +376,16 @@ def clean_df(combinedDF: pd.DataFrame) -> pd.DataFrame:
 
 def write_to_excel(combinedDF: pd.DataFrame, currentDirectory: str):
     """
+    decription: 
+            The purpose of this function is to write the results of the scraped data
+            from curseforge.net to an excel file in an Output directory
+
+    parameters: 
+            combinedDF (pd.DataFrame): is the resulting dataframe of the script
+            currentDirectory: a string location of where the current coding file 
+                                is located on your computer.
+    returns:
+        None
     """
 
     fileName = 'output.xlsx'
@@ -356,4 +404,58 @@ def write_to_excel(combinedDF: pd.DataFrame, currentDirectory: str):
     except Exception as e:
         raise "Could not output the results. Check Function 'write_to_excel()'"
 
-main()
+def get_max_webpages(url: str, driver: webdriver) -> int:
+    """
+    description:
+        The purpose of this function is get the highest number of pages from the 
+        general section of the website.  This is important because if the 
+        modding website ever adds more pages, we won't have to manually adjust the loop
+        to go through those pages. it will automatically loop from 1 to the max amount of webpages.
+
+        The max number is determined by setting the page filter to 50 mods per page and finding
+        the max number. it generallly looks like 1, 2, 3, 4, ... , 200.
+
+    parameters:
+        url (string): string location of the website we want to get the number from
+        driver (webdriver): this is the driver that is responsible for handling the browser
+
+    returns:
+        maxWebpages (int): whole number that represents the most amount of pages
+                            in the website that contains minecraft mods
+    """
+
+    try:
+
+        driver.get(url)
+        wait = WebDriverWait(driver, 10)
+        #wait until the page numbers we want generate in the website
+        waitForIt = wait.until(EC.presence_of_element_located((By.CLASS_NAME, "page-numbers")))
+
+        # Get the HTML content of the 'results-container' element
+        webpage = waitForIt.get_attribute('outerHTML')
+
+    except Exception as e:
+        print(f"An exception occurred: {e}")
+
+    #parse the webpage as html
+    soup = BeautifulSoup(webpage, 'html.parser')
+
+    #find all the buttons because the numbers are href links
+    buttons = soup.find_all('button')
+
+    #Extract the numbers as integers out of the html tags of the webpage
+    cleanedButtons = []
+    
+    for index, element in enumerate(buttons):
+        
+        try: 
+            cleanedButtons.append(int(buttons[index].text.strip()))
+        
+        except:
+
+            continue
+        
+    return max(cleanedButtons)
+
+if __name__ == '__main__':
+    main()
