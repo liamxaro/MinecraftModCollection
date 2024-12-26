@@ -16,6 +16,11 @@ import time
 import tqdm
 import xlsxwriter
 
+# class Bundle():
+
+#     def __init__(self, startTime=time.time(), parentDirectory='CachedData'):
+
+
 def main():
 
     startTime = time.time()
@@ -26,7 +31,6 @@ def main():
         'microsoft edge' : webdriver.Edge,
         'mozilla firefox' : webdriver.Firefox
     }
-
     
 
     #gather input on whether to scrape data or continue with data already there. If its your first time you need to scrape
@@ -50,18 +54,18 @@ def main():
             else:
                 print(f"Invalid response. Please enter a value consistent with [{list(drivers.keys())}")
 
-
+    
 
         
-        #get the website's max amount of pages before iterating through each one
+        #attempt to use the browser chosen by user
         try:
             driver = drivers[driverAns]()
         except:
 
-            print('That browser is not properly configured on your system.  Properly configure it or restart the program to try another browser.')
+            print('That browser is not properly configured for automation on your system.  Properly configure it or restart the program and try another browser.')
+            return
 
-
-       
+       #grab the max amount of webpages that exist on the website that we will scrape
         url = "https://www.curseforge.com/minecraft/search?page=1&pageSize=50&sortType=1&class=mc-mods"
         maxWebpages = get_max_webpages(url, driver)
 
@@ -75,12 +79,13 @@ def main():
             #retrieve the data from the webpage
             soup = get_website_data(url, driver)
             
-            #
+            #create repository structure, handling all parent directories, subdirectories, and files
             newlyCreatedFile = create_cached_data(soup, url, currentDirectory)
 
             #each webpage gets recorded as its own html file in directory 'CachedData'
             write_cached_data(soup, newlyCreatedFile)
 
+        #close browser used
         driver.quit()
 
     
@@ -111,17 +116,34 @@ def main():
     
 
 
-def create_cached_data(websiteData: BeautifulSoup, url: str, currentDirectory: str):
+def create_cached_data(websiteData: BeautifulSoup, url: str, currentDirectory: str) -> str:
     """
+    description:
+            The purpose of this function is to handle the parent directory, subdirectory and file creation.
+            The function will check if the parent (CachedData) directory exists, if not it will create it. Then 
+            it will ask if the subdirectory that will contain all scraped html files exists, if not it will create it. Lastly,
+            it will ask if the file containing the website data just scraped was created, if not it will create it.
+
+    parameters:
+
+            websiteData (BeautifulSoup): webiste data just scraped from the webpage
+
+            url (str): website url used to get the websiteData in the parameter above
+
+            currentDirectory (str): absolute path to the current directory where this current code file exists
+    
+    returns:
+            filePath (str): absolute path to the file that was just created
     """
     todaysDate = datetime.datetime.now() 
 
     #set up cached data folder system 
-    
     folderName = 'CachedData'
     parentFolderPath = os.path.join(currentDirectory, folderName)
 
     #Establish name of folder based off website we are scraping
+    #Example: takes data from curseforge.com and names it like
+    #           https:||www.curseforge.com--dd-mm-yyy
     tld = extract_tld(url)
     websiteFolderName = url.replace('/', '|')
     websiteFolderName = websiteFolderName[0:(url.index(tld) + len(tld))] #this trick grabs the index of the tld in the url
@@ -129,19 +151,25 @@ def create_cached_data(websiteData: BeautifulSoup, url: str, currentDirectory: s
     websiteFolderPath = websiteFolderPath + '--' + str(todaysDate.day) + '-' + str(todaysDate.month) + '-' + str(todaysDate.year)
 
     #Establish naming system for each file that will be placed inside websiteFolderPath
+    #Example: takes webpage https:||www.curseforge.com|minecraft|search?page=1&pageSize=50&sortType=1&class=mc-mods-DATA24-12-2024.html
+    # adds -DATA-dd-mm-yyyy at the end of the file
     fileName = url.replace('/', '|') + '-DATA' + str(todaysDate.day) + '-' + str(todaysDate.month) + '-' + str(todaysDate.year) + '.html'
     filePath = os.path.join(websiteFolderPath, fileName)
 
+    #
+    #Create CachedData repository
+    #
+
+    #If CachedData and WebsiteDay and File Scraped does not exist, create them all
     if not os.path.exists(parentFolderPath):
         try:
             os.makedirs(parentFolderPath)
         except:
-            raise "'CachedData'folder creation issue!"
+            raise "'CachedData' folder creation issue!"
         
         if not os.path.exists(websiteFolderPath):
             try:
                 os.makedirs(websiteFolderPath)
-                print("made it website name first")
             except:
                 raise "Website folder creation issue!"
             
@@ -155,11 +183,11 @@ def create_cached_data(websiteData: BeautifulSoup, url: str, currentDirectory: s
                 except:
                     raise "filePath creation issue"
     
+    #If CachedData exists but Website Day folder and webpage file do not exist, create them
     elif not os.path.exists(websiteFolderPath):
 
         try:
             os.makedirs(websiteFolderPath)
-            print("made it second website thing")
         except:
             raise "Website folder creation issue"
         
@@ -173,7 +201,7 @@ def create_cached_data(websiteData: BeautifulSoup, url: str, currentDirectory: s
             except:
                 raise "filePath creation issue"
                 
-            
+    #if the file is the only thing that needs to be created, create it      
     elif not os.path.exists(filePath):
 
         try:
@@ -186,6 +214,21 @@ def create_cached_data(websiteData: BeautifulSoup, url: str, currentDirectory: s
     return filePath
 
 def write_cached_data(websiteData: BeautifulSoup, newlyCreatedFile: str):
+    """
+    description:
+            This function is responsibe for writing the scraped website data into the newly
+            created html file
+
+    parameters:
+
+        websiteData (BeautifulSoup): Data from the webpage we want to write to the file
+
+        newlyCreatedFile (str): the absolute path to the file where we will write the data
+
+    return: 
+
+        None
+    """
 
     if websiteData is None:
         print("No data was captured. Thus the file will be empty")
@@ -212,6 +255,17 @@ def get_website_data(url: str, driver: webdriver):
 
 def create_aggregated_file():
     """
+    description: 
+            Per subdirectory, create a master file, which is a file that contains the contents of 
+            all files within that subdirectory. This function accounts for subdirectories that already
+            have a master file within it, and skips it to avoid compiling content that already exists.
+
+    parameters:
+            None
+
+    returns:
+
+            None
     """
     #get current directory with cachedData
     directory = os.path.join(os.getcwd(), 'CachedData')
@@ -219,62 +273,83 @@ def create_aggregated_file():
     #get everything in the cachedData directory
     items = os.listdir(directory)
 
-    #get all folders inside the cachedData
-    folders = [os.path.join(directory, item) for item in items if os.path.isdir(os.path.join(directory, item))]
+    #get all subdirectories inside the cachedData directory
+    subdirectories = [os.path.join(directory, item) for item in items if os.path.isdir(os.path.join(directory, item))]
 
     #Initialize string that will hold all compiled html files as string
     S = ''
 
-    iterationCount = 0
-    for i in range(len(folders)):
-        folder = os.listdir(folders[i])
-        iterationCount = iterationCount + len(folder)
+    #Check if the aggregated file already exists (if it exists, will skip recompilation)
+    aggregatedCheck = set()
+    for index, subdirectory in enumerate(subdirectories):
 
-    progressBar = tqdm.tqdm(folders, total=iterationCount, colour='#7B64C2')
-
-    for folder in folders:
-
-        #get every file in the folder
-        L = sorted(os.listdir(folder), reverse=False)
-        L = [os.path.join(directory, folder, file) for file in L]
-
+        contents = set(os.listdir(subdirectory))
+        L = set(file for file in contents if f'MASTER{subdirectory.split('.com--')[1]}' in file)
+        if len(L) > 0:
+            aggregatedCheck.add(subdirectory)
         
-
-        # Update the description with the current item
-        progressBar.set_description(f"Buidling Master File: {folder[folder.rfind('/') + 1:]}")
+    for index, subdirectory in enumerate(aggregatedCheck):
         
-        #loop through every file in a folder 
-        for i in range(len(L)):
+        if subdirectory in subdirectories:
 
-            #get the file path of the last file in the folder
-            master = ''
-            if i == len(L) - 1:
-                master = L[i]
-                master = master.replace('DATA', 'MASTER')
+            subdirectories.remove(subdirectory)
+    # if there are subdirectories that have not been compiled into a master file create a master
+    # file per subdirectory
+    if len(subdirectories) > 0:
 
-            #read the file and compile all the files in a folder into one big string
-            try:
-                if L[i] == master:
-                    pass
-                else:
-                    with open(L[i], 'r') as file:
-                        content = file.read()
-                        S = S + '\n' + content
-                        progressBar.update(1)
-                    file.close()
-            except Exception as e:
-                raise e
+        iterationCount = 0
+        for index, subdirectory in enumerate(subdirectories):
+            folder = os.listdir(subdirectory)
+            iterationCount = iterationCount + len(subdirectory)
 
+        progressBar = tqdm.tqdm(subdirectories, total=iterationCount, colour='#7B64C2')
+
+        for subdirectory in subdirectories:
+
+            #get every file in the folder
+            L = sorted(os.listdir(subdirectory), reverse=False)
+            L = [os.path.join(directory, subdirectory, file) for file in L]
+
+            
+
+            # Update the description with the current item
+            progressBar.set_description(f"Buidling Master File: {subdirectory[subdirectory.rfind('/') + 1:]}")
+            
+            #loop through every file in a folder 
+            for i in range(len(L)):
+
+                #get the file path of the last file in the folder
+                master = ''
+                if i == len(L) - 1:
+                    master = L[i]
+                    master = master.replace('DATA', 'MASTER')
+
+                #read the file and compile all the files in a folder into one big string
+                try:
+                    if L[i] == master:
+                        pass
+                    else:
+                        with open(L[i], 'r') as file:
+                            content = file.read()
+                            S = S + '\n' + content
+                            progressBar.update(1)
+                        file.close()
+                except Exception as e:
+                    raise e
+
+            
+            #write a master copy which contains the contents of every file in one file for each folder
+            soup = BeautifulSoup(S, 'html.parser')
+            with open(master, 'w') as file:
+                file.write(soup.prettify())
+            file.close()
+
+            
         
-        #write a master copy which contains the contents of every file in one file for each folder
-        soup = BeautifulSoup(S, 'html.parser')
-        with open(master, 'w') as file:
-            file.write(soup.prettify())
-        file.close()
+        progressBar.close()
+    else:
 
-        
-    
-    progressBar.close()
+        print('All existing subdirectories contain a master file. Skipping compilation process.')
 
 def convert_html_to_df(currentDirectory: str):
     """
@@ -284,6 +359,7 @@ def convert_html_to_df(currentDirectory: str):
     folders = [os.path.join(directory, item) for item in items if os.path.isdir(os.path.join(directory, item))]
     master = 'MASTER'
     finalDF = pd.DataFrame()
+    dfs = []
 
     for folder in folders:
         # Get every file in the folder
@@ -333,7 +409,8 @@ def convert_html_to_df(currentDirectory: str):
 
         df = pd.DataFrame(data_list)
         df.drop_duplicates(inplace=True, keep='first')
-        finalDF = pd.concat([finalDF, df], ignore_index=True)
+        dfs.append(df)
+    finalDF = pd.concat(dfs, ignore_index=True)
 
     return finalDF
       
@@ -365,11 +442,15 @@ def clean_df(combinedDF: pd.DataFrame) -> pd.DataFrame:
     # Sort the DataFrame by 'date_scraped' in ascending order
     combinedDF.sort_values('date_scraped', inplace=True)
 
-    # Keep the oldest date for each duplicated row
-    combinedDF = combinedDF.drop_duplicates(subset=combinedDF.columns.difference(['date_scraped']), keep='last')
-    combinedDF = combinedDF.drop_duplicates()
+    # Keep the newest entry for each title based on 'date_scraped'
+    combinedDF['date_scraped'] = pd.to_datetime(combinedDF['date_scraped'], format='%d-%m-%Y')  # Ensure correct datetime format
+    combinedDF = combinedDF.loc[combinedDF.groupby('title')['date_scraped'].idxmax()]
+    combinedDF['date_scraped'] = combinedDF['date_scraped'].dt.strftime('%d-%m-%Y')
 
+    # Reset index after grouping
     combinedDF.reset_index(drop=True, inplace=True)
+
+    
 
 
     return combinedDF
