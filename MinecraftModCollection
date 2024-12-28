@@ -16,22 +16,39 @@ import time
 import tqdm
 import xlsxwriter
 
-# class Bundle():
+class Bundle():
 
-#     def __init__(self, startTime=time.time(), parentDirectory='CachedData'):
+    def __init__(self, startTime=time.time(), parentDirectoryName='CachedData', currentDirectory=os.getcwd(), 
+                 previewUrl = 'https://www.curseforge.com/minecraft/search?page=1&pageSize=50&sortType=1&class=mc-mods',
+                 selectedUrl = 'https://www.curseforge.com/minecraft/mc-mods/ae2-network-analyser/files/all?page=1&pageSize=50',
+                 driverOptions = {'google chrome': webdriver.Chrome,
+                                    'apple safari' : webdriver.Safari,
+                                    'microsoft edge' : webdriver.Edge,
+                                    'mozilla firefox' : webdriver.Firefox},
+                recommendedDelayInSeconds = 1, maxPageNumberClassSelector = 'page-numbers',
+                previewPageClassSelector = 'results-container', previewPageSize=50,
+                filesPageSize = 50):
+
+        #/default values
+        self.startTime = startTime
+        self.parentDirectoryName = parentDirectoryName
+        self.currentDirectory = currentDirectory
+        self.previewUrl = previewUrl
+        self.selectedUrl = selectedUrl
+        self.driverOptions = driverOptions
+        self.recommendedDelayInSeconds = recommendedDelayInSeconds
+        self.maxPageNumberClassSelector = maxPageNumberClassSelector
+        self.previewPageClassSelector = previewPageClassSelector
+        self.previewPageSize = previewPageSize
+        self.filesPageSize = filesPageSize
+
+
+
 
 
 def main():
-
-    startTime = time.time()
-    currentDirectory = os.getcwd()
-    drivers = {
-        'google chrome': webdriver.Chrome,
-        'apple safari' : webdriver.Safari,
-        'microsoft edge' : webdriver.Edge,
-        'mozilla firefox' : webdriver.Firefox
-    }
-    
+    #Instantiate collection of variables
+    b1 = Bundle()
 
     #gather input on whether to scrape data or continue with data already there. If its your first time you need to scrape
     while True:
@@ -46,66 +63,125 @@ def main():
     #Determine which browser you would like python to use
     if ans in ['yes', 'y', 'yeah', 'yup']:
         while True:
-            driverAns = str(input(f"Type the browser you would like to use as it appears here\n{list(drivers.keys())}: ").lower())
+            driverAns = str(input(f"Type the browser you would like to use as it appears here\n{list(b1.driverOptions.keys())}: ").lower())
 
-            if driverAns in list(drivers.keys()):
+            if driverAns in list(b1.driverOptions.keys()):
                 break
 
             else:
-                print(f"Invalid response. Please enter a value consistent with [{list(drivers.keys())}")
-
-    
+                print(f"Invalid response. Please enter a value consistent with [{list(b1.driverOptions.keys())}")
 
         
         #attempt to use the browser chosen by user
         try:
-            driver = drivers[driverAns]()
+            driver = b1.driverOptions[driverAns]()
+            b1.chosenDriver = driver
         except:
 
             print('That browser is not properly configured for automation on your system.  Properly configure it or restart the program and try another browser.')
             return
+        
+        print("""DISCLAIMER: There are two modes to choose from [general, detail].  Running in general mode is quicker and only scrapes
+                preview level data.  It does not provide a complete insight on the mods availabe and only gives you a rough estimate of 
+                what to expect. The data is taken only from the preview cards.  Running in detail mode scrapes the extended table from the 
+                files tab while inside the selected mod page.""")
+        while True:
+            modeAns = str(input(f"Type the mode you would like to use to scrape the data [general, detail]: ").lower())
+            if modeAns in ['general', 'detail']:
+                b1.mode = modeAns
+                break
+            else:
+                print('Invalid response. Please enter an answer consistent with these two modes [general, detail]')
 
        #grab the max amount of webpages that exist on the website that we will scrape
-        url = "https://www.curseforge.com/minecraft/search?page=1&pageSize=50&sortType=1&class=mc-mods"
-        maxWebpages = get_max_webpages(url, driver)
+        maxWebpages = get_max_webpages(b1)
 
         
-
+        if b1.mode == 'general':
         
-        #iterate through all the webpages
-        for i in range(1, maxWebpages + 1):
-            url = f"https://www.curseforge.com/minecraft/search?page={i}&pageSize=50&sortType=1&class=mc-mods"
+            #iterate through all the webpages
+            for i in range(1, maxWebpages + 1):
+                b1.previewUrl = f"https://www.curseforge.com/minecraft/search?page={i}&pageSize=50&sortType=1&class=mc-mods"
 
-            #retrieve the data from the webpage
-            soup = get_website_data(url, driver)
-            
-            #create repository structure, handling all parent directories, subdirectories, and files
-            newlyCreatedFile = create_cached_data(soup, url, currentDirectory)
+                #retrieve the data from the webpage
+                soup = get_website_data(b1)
+                
+                #create repository structure, handling all parent directories, subdirectories, and files
+                newlyCreatedFile = create_cached_data(soup, b1)
 
-            #each webpage gets recorded as its own html file in directory 'CachedData'
-            write_cached_data(soup, newlyCreatedFile)
+                #each webpage gets recorded as its own html file in directory 'CachedData'
+                write_cached_data(soup, newlyCreatedFile)
 
-        #close browser used
-        driver.quit()
+            #close browser used
+            b1.chosenDriver.quit()
+        
+        elif b1.mode == 'detail':
 
+            progressBar = tqdm.tqdm(range(1, maxWebpages + 1), colour='#7B64C2')
+            #iterate through all the webpages
+            for i in progressBar:
+                b1.previewUrl = f"https://www.curseforge.com/minecraft/search?page={i}&pageSize={b1.previewPageSize}&sortBy=relevancy&class=mc-mods"
+                                
+                #retrieve the mod cards from each webpage
+                soup = get_website_data(b1)
+                cards = soup.find_all('div', class_='project-card')
+                
+                #iterate through each mod card
+                for index, card in enumerate(cards):
+
+                    cardLabel = card.find('a', class_='overlay-link')
+                    cardLink = cardLabel.get('href')
+                    progressBar.set_description(f"Processing {cardLink.split('/')[-1]}")
+                    b1.selectedUrl = f'https://www.curseforge.com' + cardLink + f'/files/all?page=1&pageSize={b1.filesPageSize}' #b1 1 is used in this url
+                    
+                    #grab the maximum amount of pages dedicated to the files table
+                    maxFilepages = get_max_filepages(b1)
+                    
+                    #grab the table containing all availabe files for the mod
+                    filesTable = get_files_table(b1)
+
+                    # print(f"{index} URL Being Used: {b1.selectedUrl}")
+                    # print(filesTable)
+                    newlyCreatedFile = create_cached_data(filesTable, b1)
+                    write_cached_data(filesTable, newlyCreatedFile)
+
+
+                    if maxFilepages > 1:
+                        #iterate through each file page dedicated to the mod
+                        for i in range(2, maxFilepages + 1): # we adjust our loop to 2 to max() + 1
+                            b1.selectedUrl = f'https://www.curseforge.com' + cardLink + f'/files/all?page={i}&pageSize={b1.filesPageSize}'
+                            #div class you're looking for is called files-table
+                            #print(f"URL Being Used: {b1.selectedUrl}")
+                            filesTable = get_files_table(b1)
+
+                            newlyCreatedFile = create_cached_data(filesTable, b1)
+                            write_cached_data(filesTable, newlyCreatedFile)
+                            #print(filesTable)
+
+
+
+                    
+                
+                
+                
     
-    #combine all webpages into one one MASTER page
-    create_aggregated_file()
+    # #combine all webpages into one one MASTER page
+    # create_aggregated_file()
 
-    #access the one MASTER webpage and put the desired data into a pandas DataFrame
-    combinedDF = convert_html_to_df(currentDirectory)
+    # #access the one MASTER webpage and put the desired data into a pandas DataFrame
+    # combinedDF = convert_html_to_df(b1)
 
-    #adjust the values(dates ,general cleaning, etc)
-    combinedDF = clean_df(combinedDF)
+    # #adjust the values(dates ,general cleaning, etc)
+    # combinedDF = clean_df(combinedDF)
 
-    #output to an excel file
-    write_to_excel(combinedDF, currentDirectory)
+    # #output to an excel file
+    # write_to_excel(combinedDF, b1)
 
 
 
     #Finalize time logic to display total execution time
     endTime = time.time()
-    elapsedTime = endTime - startTime
+    elapsedTime = endTime - b1.startTime
     hours, remainder = divmod(elapsedTime, 3600)
     minutes, seconds = divmod(remainder, 60)
 
@@ -116,7 +192,7 @@ def main():
     
 
 
-def create_cached_data(websiteData: BeautifulSoup, url: str, currentDirectory: str) -> str:
+def create_cached_data(websiteData: BeautifulSoup, b1: Bundle) -> str:
     """
     description:
             The purpose of this function is to handle the parent directory, subdirectory and file creation.
@@ -127,10 +203,9 @@ def create_cached_data(websiteData: BeautifulSoup, url: str, currentDirectory: s
     parameters:
 
             websiteData (BeautifulSoup): webiste data just scraped from the webpage
-
-            url (str): website url used to get the websiteData in the parameter above
-
-            currentDirectory (str): absolute path to the current directory where this current code file exists
+            b1(Bundle):
+                url (str): website url used to get the websiteData in the parameter above
+                currentDirectory (str): absolute path to the current directory where this current code file exists
     
     returns:
             filePath (str): absolute path to the file that was just created
@@ -138,78 +213,49 @@ def create_cached_data(websiteData: BeautifulSoup, url: str, currentDirectory: s
     todaysDate = datetime.datetime.now() 
 
     #set up cached data folder system 
-    folderName = 'CachedData'
-    parentFolderPath = os.path.join(currentDirectory, folderName)
+    parentFolderPath = os.path.join(b1.currentDirectory, b1.parentDirectoryName)
 
     #Establish name of folder based off website we are scraping
     #Example: takes data from curseforge.com and names it like
     #           https:||www.curseforge.com--dd-mm-yyy
-    tld = extract_tld(url)
-    websiteFolderName = url.replace('/', '|')
-    websiteFolderName = websiteFolderName[0:(url.index(tld) + len(tld))] #this trick grabs the index of the tld in the url
-    websiteFolderPath = os.path.join(parentFolderPath, websiteFolderName)
+    tld = extract_tld(b1)
+    websiteFolderName = b1.previewUrl.replace('/', '|')
+    websiteFolderName = websiteFolderName[0:(b1.previewUrl.index(tld) + len(tld))] #this trick grabs the index of the tld in the url
+    websiteFolderPath = os.path.join(parentFolderPath, b1.mode, websiteFolderName)
     websiteFolderPath = websiteFolderPath + '--' + str(todaysDate.day) + '-' + str(todaysDate.month) + '-' + str(todaysDate.year)
 
     #Establish naming system for each file that will be placed inside websiteFolderPath
     #Example: takes webpage https:||www.curseforge.com|minecraft|search?page=1&pageSize=50&sortType=1&class=mc-mods-DATA24-12-2024.html
     # adds -DATA-dd-mm-yyyy at the end of the file
-    fileName = url.replace('/', '|') + '-DATA' + str(todaysDate.day) + '-' + str(todaysDate.month) + '-' + str(todaysDate.year) + '.html'
-    filePath = os.path.join(websiteFolderPath, fileName)
+    if b1.mode == 'general':
+        fileName = b1.previewUrl.replace('/', '|') + '-DATA' + str(todaysDate.day) + '-' + str(todaysDate.month) + '-' + str(todaysDate.year) + '.html'
+        filePath = os.path.join(websiteFolderPath, fileName)
+    elif b1.mode == 'detail':
+        fileName = b1.selectedUrl.replace('/', '|') + '-DATA' + str(todaysDate.day) + '-' + str(todaysDate.month) + '-' + str(todaysDate.year) + '.html'
+        filePath = os.path.join(websiteFolderPath, fileName)
+
 
     #
     #Create CachedData repository
     #
 
-    #If CachedData and WebsiteDay and File Scraped does not exist, create them all
-    if not os.path.exists(parentFolderPath):
-        try:
-            os.makedirs(parentFolderPath)
-        except:
-            raise "'CachedData' folder creation issue!"
+    if not os.path.exists((parentFolderPath)):
+
+        os.mkdir(parentFolderPath)
+
+    if not os.path.exists(os.path.join(parentFolderPath, b1.mode)):
+
+        os.mkdir(os.path.join(parentFolderPath, b1.mode))
+
+    if not os.path.exists(os.path.join(parentFolderPath, websiteFolderPath)):
+
+        os.mkdir(os.path.join(parentFolderPath, websiteFolderPath))
+
+    if not os.path.exists(filePath):
+
+        with open(filePath, 'w') as file:
+            file.write('')
         
-        if not os.path.exists(websiteFolderPath):
-            try:
-                os.makedirs(websiteFolderPath)
-            except:
-                raise "Website folder creation issue!"
-            
-                
-            if not os.path.exists(filePath):
-
-                try:
-                    with open(filePath, 'w') as file:
-                        file.write('')
-                    file.close()
-                except:
-                    raise "filePath creation issue"
-    
-    #If CachedData exists but Website Day folder and webpage file do not exist, create them
-    elif not os.path.exists(websiteFolderPath):
-
-        try:
-            os.makedirs(websiteFolderPath)
-        except:
-            raise "Website folder creation issue"
-        
-    
-        if not os.path.exists(filePath):
-            
-            try:
-                with open(filePath, 'w') as file:
-                    file.write('')
-                file.close()
-            except:
-                raise "filePath creation issue"
-                
-    #if the file is the only thing that needs to be created, create it      
-    elif not os.path.exists(filePath):
-
-        try:
-            with open(filePath, 'w') as file:
-                file.write('')
-            file.close()
-        except:
-            raise "filePath creation issue!"
     
     return filePath
 
@@ -237,11 +283,11 @@ def write_cached_data(websiteData: BeautifulSoup, newlyCreatedFile: str):
             file.write(websiteData.prettify())
         file.close()
 
-def get_website_data(url: str, driver: webdriver):
+def get_website_data(b1: Bundle) -> BeautifulSoup:
     try:
-        driver.get(url)
-        wait = WebDriverWait(driver, 10)
-        waitForIt = wait.until(EC.presence_of_element_located((By.CLASS_NAME, "results-container")))
+        b1.chosenDriver.get(b1.previewUrl)
+        wait = WebDriverWait(b1.chosenDriver, 10)
+        waitForIt = wait.until(EC.presence_of_element_located((By.CLASS_NAME, b1.previewPageClassSelector)))
 
         # Get the HTML content of the 'results-container' element
         webpage = waitForIt.get_attribute('outerHTML')
@@ -351,12 +397,17 @@ def create_aggregated_file():
 
         print('All existing subdirectories contain a master file. Skipping compilation process.')
 
-def convert_html_to_df(currentDirectory: str):
+def convert_html_to_df(b1: Bundle):
     """
     """
-    directory = os.path.join(currentDirectory, 'CachedData')
+    #get parentDirectory path
+    directory = os.path.join(b1.currentDirectory, b1.parentDirectoryName)
+
+    #get all items from parentDirectory and filter it down to only subdirectories
     items = os.listdir(directory)
     folders = [os.path.join(directory, item) for item in items if os.path.isdir(os.path.join(directory, item))]
+    
+    #Intantiate some vars
     master = 'MASTER'
     finalDF = pd.DataFrame()
     dfs = []
@@ -414,9 +465,9 @@ def convert_html_to_df(currentDirectory: str):
 
     return finalDF
       
-def extract_tld(url:str) -> str:
+def extract_tld(b1:Bundle) -> str:
     # Use tldextract to extract the domain components
-    extracted_info = tldextract.extract(url)
+    extracted_info = tldextract.extract(b1.previewUrl)
 
     # Construct and return the top-level domain with the leading dot
     tld = f".{extracted_info.suffix}"
@@ -455,7 +506,7 @@ def clean_df(combinedDF: pd.DataFrame) -> pd.DataFrame:
 
     return combinedDF
 
-def write_to_excel(combinedDF: pd.DataFrame, currentDirectory: str):
+def write_to_excel(combinedDF: pd.DataFrame, b1:Bundle):
     """
     decription: 
             The purpose of this function is to write the results of the scraped data
@@ -463,8 +514,8 @@ def write_to_excel(combinedDF: pd.DataFrame, currentDirectory: str):
 
     parameters: 
             combinedDF (pd.DataFrame): is the resulting dataframe of the script
-            currentDirectory: a string location of where the current coding file 
-                                is located on your computer.
+            b1 (Bundle):
+
     returns:
         None
     """
@@ -485,7 +536,7 @@ def write_to_excel(combinedDF: pd.DataFrame, currentDirectory: str):
     except Exception as e:
         raise "Could not output the results. Check Function 'write_to_excel()'"
 
-def get_max_webpages(url: str, driver: webdriver) -> int:
+def get_max_webpages(b1: Bundle) -> int:
     """
     description:
         The purpose of this function is get the highest number of pages from the 
@@ -496,9 +547,13 @@ def get_max_webpages(url: str, driver: webdriver) -> int:
         The max number is determined by setting the page filter to 50 mods per page and finding
         the max number. it generallly looks like 1, 2, 3, 4, ... , 200.
 
+        Needed for general mode
+
     parameters:
-        url (string): string location of the website we want to get the number from
-        driver (webdriver): this is the driver that is responsible for handling the browser
+        b1 (Bundle)
+            previewUrl (string): string location of the website we want to get the number from
+            chosenDriver (webdriver): this is the driver that is responsible for handling the browser
+            maxPageNumberClassSelector (str): this contains the class selector that holds the max number of pages
 
     returns:
         maxWebpages (int): whole number that represents the most amount of pages
@@ -507,10 +562,10 @@ def get_max_webpages(url: str, driver: webdriver) -> int:
 
     try:
 
-        driver.get(url)
-        wait = WebDriverWait(driver, 10)
+        b1.chosenDriver.get(b1.previewUrl)
+        wait = WebDriverWait(b1.chosenDriver, 10)
         #wait until the page numbers we want generate in the website
-        waitForIt = wait.until(EC.presence_of_element_located((By.CLASS_NAME, "page-numbers")))
+        waitForIt = wait.until(EC.presence_of_element_located((By.CLASS_NAME, b1.maxPageNumberClassSelector)))
 
         # Get the HTML content of the 'results-container' element
         webpage = waitForIt.get_attribute('outerHTML')
@@ -537,6 +592,78 @@ def get_max_webpages(url: str, driver: webdriver) -> int:
             continue
         
     return max(cleanedButtons)
+
+def get_max_filepages(b1: Bundle) -> int:
+    """
+    description:
+        The purpose of this function is get the highest number of pages from the 
+        individual mod files section of the website.  This is important because if the 
+        modding website ever adds more pages, we won't have to manually adjust the loop
+        to go through those pages. it will automatically loop from 1 to the max amount of file
+        pages.
+
+        The max number is determined by setting the page filter to 50 mods per page and finding
+        the max number. it generallly looks like 1, 2, 3 ,4... 10.
+
+        Needed for detail mode
+
+    parameters:
+        b1 (Bundle)
+            selectedUrl (string): string location of the website we want to get the number from
+            chosenDriver (webdriver): this is the driver that is responsible for handling the browser
+            maxPageNumberClassSelector (str): this contains the class selector that holds the max number of pages
+
+    returns:
+        maxWebpages (int): whole number that represents the most amount of pages
+                            in the website that contains minecraft mods
+    """
+
+    try:
+
+        b1.chosenDriver.get(b1.selectedUrl)
+        wait = WebDriverWait(b1.chosenDriver, 10)
+        #wait until the page numbers we want generate in the website
+        waitForIt = wait.until(EC.presence_of_all_elements_located((By.CSS_SELECTOR, "ul.page-numbers button")))
+
+        # Once all buttons are present, extract their text
+        buttons = b1.chosenDriver.find_elements(By.CSS_SELECTOR, "ul.page-numbers button")
+
+
+    except Exception as e:
+        print(f"An exception occurred: {e}")
+
+
+    #Extract the numbers as integers out of the html tags of the webpage
+    cleanedButtons = []
+    
+    for index, element in enumerate(buttons):
+        
+        try: 
+            cleanedButtons.append(int(buttons[index].text.strip()))
+        
+        except:
+
+            continue
+        
+    return max(cleanedButtons)
+
+def get_files_table(b1: Bundle) -> BeautifulSoup:
+    """
+    """
+    try:
+        b1.chosenDriver.get(b1.selectedUrl)
+        wait = WebDriverWait(b1.chosenDriver, 10)
+        waitForIt = wait.until(EC.presence_of_element_located((By.CLASS_NAME, 'files-table')))
+
+        # Get the HTML content of the 'results-container' element
+        webpage = waitForIt.get_attribute('outerHTML')
+
+        # Parse the HTML using BeautifulSoup
+        soup = BeautifulSoup(webpage, features="html.parser")
+
+        return soup
+    except Exception as e:
+        print(f"An exception occurred: {e}")
 
 if __name__ == '__main__':
     main()
