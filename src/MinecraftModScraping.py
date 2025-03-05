@@ -14,7 +14,7 @@ import pandas as pd
 import datetime
 import time
 import tqdm
-import xlsxwriter
+import openpyxl
 
 class Bundle():
 

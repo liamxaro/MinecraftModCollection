@@ -14,17 +14,20 @@ import pandas as pd
 import datetime
 import time
 import tqdm
-import xlsxwriter
+import openpyxl
 
-from src.MinecraftModScraping import *
-from src.MinecraftModScraping import b1
+from MinecraftModScraping import *
+from MinecraftModScraping import b1
+
+from MinecraftModProcessing import *
+
 
 
 def main(b1: Bundle):
     """
     """
     #Scrape desired data from curseforge website
-    collect(b1)
+    scrape(b1)
     
     #Finalize time logic to display total execution time
         #needed to access b1.startTime
@@ -35,6 +38,8 @@ def main(b1: Bundle):
     minutes, seconds = divmod(remainder, 60)
 
     print(f"Collection Process Completed In: {int(hours)} hours, {int(minutes)} minutes, {int(seconds)} seconds")
+    
+    process(b1)
     
     
     
