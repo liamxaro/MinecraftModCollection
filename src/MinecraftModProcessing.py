@@ -18,8 +18,7 @@ from openpyxl import load_workbook
 import lxml
 import numpy as np
 
-from src.MinecraftModScraping import *
-from src.MinecraftModScraping import b1
+from MinecraftModScraping import *
 
 def process(b1: Bundle) -> None:
     """
@@ -66,9 +65,7 @@ def process(b1: Bundle) -> None:
     write_to_excel(combinedDF, b1)
     
 
-
-
-def write_to_excel(combinedDF: pd.DataFrame, b1:Bundle, sheetName=b1.mode):
+def write_to_excel(combinedDF: pd.DataFrame, b1:Bundle, sheetName:str):
     """
     decription: 
             The purpose of this function is to write the results of the scraped data
@@ -521,6 +518,3 @@ def detect_encoding(b1: Bundle) -> str:
     
     return encodings
                     
-                
-    
-process(b1)
