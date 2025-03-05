@@ -80,9 +80,7 @@ def main(b1: Bundle):
     """
     """
     #Scrape desired data from curseforge website
-    print("trying to scrape")
     scrape(b1)
-    print("did we scrape?")
     
     #Finalize time logic to display total execution time
         #needed to access b1.startTime
