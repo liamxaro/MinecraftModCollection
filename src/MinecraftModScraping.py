@@ -74,10 +74,10 @@ class Bundle():
 
 
 
-#Instantiate collection of variables outside of the collect()
+#Instantiate collection of variables outside of the scrape()
 #   so we can import it into other files
 b1 = Bundle()
-def collect(b1: Bundle) -> None:
+def scrape(b1: Bundle) -> None:
     
     
 
@@ -719,4 +719,4 @@ def get_newest_mod_grouping(newestFolder: str, newestFile: str) -> list[str]:
     
     
 if __name__ == '__main__':
-    collect(b1)
+    scrape(b1)
