@@ -1,0 +1,18 @@
+baselink: https://curseforge.com
+
+robots.txt:
+
+    User-agent: *
+    Disallow: /api/
+    Disallow: /cp/
+    Disallow: /Content/
+    Disallow: */relations/dependencies
+    Disallow: */relations/dependents
+
+    Crawl-delay: 1
+
+    User-agent: Mediapartners-Google*
+    Disallow: 
+
+
+Currently disallows the downloading of jar files
